@@ -1,0 +1,136 @@
+#!/bin/bash -l
+#
+# ted pedersen date of last revision jan 26, 2014
+
+# note that this script has been modified to use /lustre as the location
+# of your input and output, and then to use local scratch volumes for 
+# hdfs input and output. To use this script you should create a directory
+# /lustre/$USER (so in my case this is /lustre/prof5621) Then copy the input
+# to this directory and untar (the copydata.sh script does this). 
+# Once the input data is in place on /lustre, you can run ./runit-generic.sh 
+# as usual, which will actually submit this script. 
+#
+# this is a generic script that should work for most hadoop jobs that
+# have one input directory, and then one hdfs input and one hdfs output
+# this directory assumes your input is found in /lustre/$USER and
+# that your hdfs files will be in /scratch/$USER (but you won't be able to see
+# those except in log files)
+#
+# note that itasca nodes have 8 cores each and are not shared, so 
+# ppn may just as well be 8
+#
+# each node has a local /scratch directory of 86 GB, so make sure you request
+# enough nodes to have enough disk space. remember hadoop likes to make 
+# copies of data, so consider having 3-5 times as much hard disk space availabe
+# as you have input data. If your input data is 100 GB, then you probably want
+# to have a total of 500 GB of hard disk space available (at a minimum).
+
+#PBS -l nodes=16:ppn=8,pmem=2gb
+#PBS -l walltime=03:20:00
+#PBS -m abe
+#PBS -e generic.e
+#PBS -o generic.o
+#PBS -q batch
+
+# variables to set for this run 
+
+PACKAGENAME=googlengram.main.mapreduce
+
+# *** you will need to modify CLASSNAME for each assignment ***
+
+CLASSNAME=GoogleNgramsMain
+
+# location of local input directory 
+# *** you will need to modify this for each assignment ***
+
+
+LOCALINPUT=/panfs/roc/scratch/teamB/unzippedInput/*
+ 
+
+# location of local output directory
+
+LOCALOUTPUT=/panfs/roc/scratch/teamB/output
+
+
+# location of hdfs directories, these will be on local
+# scratch and not visible to you except in log messages
+
+HDFSINPUT=input
+HDFSCOUNTOUTPUT=ngram_countoutput
+HDFSRELATEDGRAMS=ngram_relatedgrams
+HDFSOUTPUT=output
+
+# should not need to change anything below this line
+# unless you add command line arguments to your program
+# assumes that .jar .java and class have same name
+# as in CLASSNAME.java CLASSNAME.jar CLASSNAME
+# --------------------------------------------------------
+
+# let pbs know where you are!
+
+cd $PBS_O_WORKDIR
+
+# set up hadoop
+
+module load hadoop
+
+setup_cluster
+
+start-all.sh
+
+# give hadoop time initialize
+
+sleep 120
+
+# delete old copies of hdfsinfput and hdfsoutput, probably nothing there
+# but just in case
+
+hadoop fs -rmr $HDFSINPUT
+hadoop fs -rmr $HDFSCOUNTOUTPUT
+hadoop fs -rmr $HDFSOUTPUT
+hadoop fs -rmr $HDFSRELATEDGRAMS
+
+
+# delete old copies of local output file
+
+rm -fr $LOCALOUTPUT
+# create directory for the intermediate output
+
+# create hdfs input directory and copy local data to it, then display
+
+hadoop fs -mkdir $HDFSINPUT
+hadoop fs -put $LOCALINPUT $HDFSINPUT
+hadoop fs -ls $HDFSINPUT
+
+# run the program!
+# if you add command line arguments you'll need to add them here
+
+hadoop jar $CLASSNAME.jar $PACKAGENAME.$CLASSNAME $HDFSINPUT $HDFSCOUNTOUTPUT $HDFSRELATEDGRAMS  $HDFSOUTPUT  
+
+
+# display results file in generic.o
+
+hadoop fs -lsr /
+
+hadoop fs -ls $HDFSOUTPUT
+
+hadoop fs -cat $HDFSOUTPUT/part*
+
+
+# create a local output directory and copy HDFSOUTPUT to it
+
+mkdir $LOCALOUTPUT
+
+# copy from hdfs to local file system
+
+hadoop fs -get $HDFSOUTPUT/part* $LOCALOUTPUT
+
+# now delete HDFS files - they will probably go away when your job
+# ends, but just in case.
+
+hadoop fs -rmr $HDFSOUTPUT
+hadoop fs -rmr $HDFSINPUT
+hadoop fs -rmr $HDFSCOUNTOUTPUT
+hadoop fs -rmr $HDFSRELATEDGRAMS
+
+
